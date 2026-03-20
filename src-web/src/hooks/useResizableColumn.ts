@@ -65,5 +65,12 @@ export function useResizableColumn(
     document.addEventListener("mouseup", onUp);
   }, [width, direction, minWidth, persistKey]);
 
-  return { width, onMouseDown };
+  const setWidthExternally = useCallback((newWidth: number) => {
+    const clamped = Math.max(minWidth, newWidth);
+    setWidth(clamped);
+    latestWidth.current = clamped;
+    if (persistKey) saveWidth(persistKey, clamped);
+  }, [minWidth, persistKey]);
+
+  return { width, onMouseDown, setWidth: setWidthExternally };
 }
