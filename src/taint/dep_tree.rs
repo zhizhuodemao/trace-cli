@@ -19,6 +19,7 @@ pub struct DependencyNode {
     pub operation: String,
     pub children: Vec<DependencyNode>,
     pub is_leaf: bool,
+    pub is_ref: bool,
     pub value: Option<String>,
     pub depth: u32,
 }
@@ -76,7 +77,8 @@ pub fn build_tree(view: &ScanView, start_index: u32, data_only: bool) -> Depende
     }
 
     let mut ancestors = HashSet::new();
-    build_node(root_line, &children_map, 0, &mut ancestors)
+    let mut expanded = HashSet::new();
+    build_node(root_line, &children_map, 0, &mut ancestors, &mut expanded)
 }
 
 fn collect_deps(raw: u32, view: &ScanView, data_only: bool) -> Vec<u32> {
@@ -129,7 +131,24 @@ fn build_node(
     children_map: &HashMap<u32, Vec<u32>>,
     depth: u32,
     ancestors: &mut HashSet<u32>,
+    expanded: &mut HashSet<u32>,
 ) -> DependencyNode {
+    // 如果该节点已在其他分支展开过，返回引用占位符
+    if expanded.contains(&line) {
+        return DependencyNode {
+            seq: line,
+            expression: String::new(),
+            operation: String::new(),
+            children: vec![],
+            is_leaf: false,
+            is_ref: true,
+            value: None,
+            depth,
+        };
+    }
+
+    expanded.insert(line);
+
     let child_lines = children_map.get(&line).cloned().unwrap_or_default();
 
     ancestors.insert(line);
@@ -140,7 +159,7 @@ fn build_node(
         .collect();
     let children: Vec<DependencyNode> = valid_children
         .iter()
-        .map(|&child_line| build_node(child_line, children_map, depth + 1, ancestors))
+        .map(|&child_line| build_node(child_line, children_map, depth + 1, ancestors, expanded))
         .collect();
     ancestors.remove(&line);
 
@@ -152,6 +171,7 @@ fn build_node(
         operation: String::new(),
         children,
         is_leaf,
+        is_ref: false,
         value: None,
         depth,
     }

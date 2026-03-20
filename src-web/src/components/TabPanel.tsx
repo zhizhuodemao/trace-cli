@@ -13,6 +13,58 @@ import StringsPanel from "./StringsPanel";
 const TABS = ["Memory", "Accesses", "Taint State", "Search", "Strings"] as const;
 type TabName = typeof TABS[number];
 
+function DepTreeFromSliceButton({ sessionId }: { sessionId: string | null }) {
+  const [building, setBuilding] = useState(false);
+  const buildingRef = useRef(false);
+
+  const handleClick = useCallback(async () => {
+    if (!sessionId || buildingRef.current) return;
+    buildingRef.current = true;
+    setBuilding(true);
+    try {
+      const tree = await invoke<DependencyNode>("build_dependency_tree_from_slice", { sessionId });
+      const winLabel = `panel-dep-tree-${Date.now()}`;
+      const unlisten = await listen(`dep-tree:ready:${winLabel}`, () => {
+        emitTo(winLabel, "dep-tree:init-data", { tree, sessionId });
+        unlisten();
+      });
+      new WebviewWindow(winLabel, {
+        url: `index.html?panel=dep-tree`,
+        title: "Dependency Tree",
+        width: 800,
+        height: 600,
+        decorations: false,
+        transparent: true,
+      });
+    } catch (e) {
+      console.error("build_dependency_tree_from_slice failed:", e);
+    } finally {
+      buildingRef.current = false;
+      setBuilding(false);
+    }
+  }, [sessionId]);
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      <button
+        onClick={handleClick}
+        disabled={building}
+        style={{
+          padding: "3px 10px",
+          fontSize: 11,
+          background: "var(--btn-secondary, #3e4451)",
+          color: building ? "var(--text-secondary)" : "var(--text-primary)",
+          border: "1px solid var(--border-color)",
+          borderRadius: 4,
+          cursor: building ? "not-allowed" : "pointer",
+        }}
+      >
+        {building ? "正在构建依赖树..." : "以依赖树查看"}
+      </button>
+    </div>
+  );
+}
+
 const TAB_TO_PANEL: Record<string, string> = {
   "Memory": "memory",
   "Accesses": "accesses",
@@ -317,42 +369,7 @@ export default function TabPanel({
                 <span style={{ color: "var(--text-primary)" }}>{(sliceDuration / 1000).toFixed(2)}s</span>
               </div>
             )}
-            <div style={{ marginTop: 4 }}>
-              <button
-                onClick={async () => {
-                  if (!sessionId) return;
-                  try {
-                    const tree = await invoke<DependencyNode>("build_dependency_tree_from_slice", { sessionId });
-                    const winLabel = `panel-dep-tree-${Date.now()}`;
-                    const unlisten = await listen(`dep-tree:ready:${winLabel}`, () => {
-                      emitTo(winLabel, "dep-tree:init-data", { tree, sessionId });
-                      unlisten();
-                    });
-                    new WebviewWindow(winLabel, {
-                      url: `index.html?panel=dep-tree`,
-                      title: "Dependency Tree",
-                      width: 800,
-                      height: 600,
-                      decorations: false,
-                      transparent: true,
-                    });
-                  } catch (e) {
-                    console.error("build_dependency_tree_from_slice failed:", e);
-                  }
-                }}
-                style={{
-                  padding: "3px 10px",
-                  fontSize: 11,
-                  background: "var(--btn-secondary, #3e4451)",
-                  color: "var(--text-primary)",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                }}
-              >
-                以依赖树查看
-              </button>
-            </div>
+            <DepTreeFromSliceButton sessionId={sessionId} />
           </div>
         ) : (
           <div style={{ width: "100%", textAlign: "center" }}>

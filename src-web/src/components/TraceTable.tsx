@@ -1067,9 +1067,16 @@ export default function TraceTable({
     });
   }, []);
 
+  // 依赖树构建状态
+  const depTreeBuildingRef = useRef(false);
+  const [depTreeBuilding, setDepTreeBuilding] = useState(false);
+
   // 打开依赖树浮动窗口
   const openDepTreeWindow = useCallback(async (seq: number, target: string) => {
     if (!sessionId) return;
+    if (depTreeBuildingRef.current) return; // 防止并发构建
+    depTreeBuildingRef.current = true;
+    setDepTreeBuilding(true);
     try {
       const tree = await invoke<DependencyNode>("build_dependency_tree", {
         sessionId, seq, target: `reg:${target}`, dataOnly: false,
@@ -1089,6 +1096,9 @@ export default function TraceTable({
       });
     } catch (e) {
       console.error("build_dependency_tree failed:", e);
+    } finally {
+      depTreeBuildingRef.current = false;
+      setDepTreeBuilding(false);
     }
   }, [sessionId]);
 
@@ -2821,13 +2831,14 @@ export default function TraceTable({
                     <ContextMenuSeparator />
                     <div
                       onClick={() => {
+                        if (depTreeBuilding) return;
                         handleDepTreeFromMenu();
                         setCtxMenu(null);
                       }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-selected)"; setHighlightSubmenuOpen(false); }}
+                      onMouseEnter={(e) => { if (!depTreeBuilding) (e.currentTarget as HTMLElement).style.background = "var(--bg-selected)"; setHighlightSubmenuOpen(false); }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                      style={{ padding: "6px 12px", fontSize: 12, color: "var(--text-primary)", cursor: "pointer", whiteSpace: "nowrap" }}
-                    >查看依赖树</div>
+                      style={{ padding: "6px 12px", fontSize: 12, color: depTreeBuilding ? "var(--text-secondary)" : "var(--text-primary)", cursor: depTreeBuilding ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+                    >{depTreeBuilding ? "正在构建依赖树..." : "查看依赖树"}</div>
                   </>
                 )}
               </>

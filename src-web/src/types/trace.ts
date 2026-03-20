@@ -131,6 +131,7 @@ export interface DependencyNode {
   operation: string;
   children: DependencyNode[];
   isLeaf: boolean;
+  isRef: boolean;
   value: string | null;
   depth: number;
 }

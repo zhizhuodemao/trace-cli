@@ -88,8 +88,22 @@ function TreeNode({ node, sessionId, defaultExpandDepth }: TreeNodeProps) {
           {node.expression}
         </span>
 
+        {/* Ref badge for nodes expanded elsewhere */}
+        {node.isRef && (
+          <span style={{
+            padding: "0 4px",
+            borderRadius: 3,
+            background: "rgba(97, 175, 239, 0.15)",
+            color: "#61afef",
+            fontSize: 10,
+            flexShrink: 0,
+          }}>
+            → 已在上方展开
+          </span>
+        )}
+
         {/* Value badge for leaf nodes */}
-        {node.isLeaf && node.value != null && (
+        {!node.isRef && node.isLeaf && node.value != null && (
           <span style={{
             padding: "0 4px",
             borderRadius: 3,
