@@ -215,11 +215,14 @@ fn fill_node_info(
                     node.expression = format!("{} {}", p.mnemonic, use_str);
                 }
 
+                node.asm = extract_asm(line_str, format);
+
                 if node.is_leaf && !changes.is_empty() {
                     node.value = Some(changes);
                 }
             } else {
                 node.expression = line_str.trim().to_string();
+                node.asm = line_str.trim().to_string();
                 node.operation = "unknown".to_string();
             }
         }
@@ -269,6 +272,31 @@ fn collect_deps(raw: u32, view: &ScanView, data_only: bool) -> Vec<u32> {
     }
 
     deps
+}
+
+/// 从 trace 原始行中提取汇编文本（mnemonic + operands）。
+fn extract_asm(line_str: &str, format: TraceFormat) -> String {
+    match format {
+        TraceFormat::Unidbg => {
+            // Unidbg 格式: ... "mnemonic operands" ... => ...
+            // 提取双引号之间的内容
+            if let Some(start) = line_str.find('"') {
+                if let Some(end) = line_str[start + 1..].find('"') {
+                    return line_str[start + 1..start + 1 + end].trim().to_string();
+                }
+            }
+            String::new()
+        }
+        TraceFormat::Gumtrace => {
+            // Gumtrace 格式: addr | mnemonic operands | ...
+            // 提取第一个 '|' 之后、第二个 '|' 之前的内容
+            let parts: Vec<&str> = line_str.splitn(3, '|').collect();
+            if parts.len() >= 2 {
+                return parts[1].trim().to_string();
+            }
+            String::new()
+        }
+    }
 }
 
 fn extract_changes(line: &str) -> String {
