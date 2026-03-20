@@ -199,6 +199,8 @@ export default function DagGraphView({ tree, sessionId }: DagGraphViewProps) {
         ref={svgRef}
         style={{
           flex: 1,
+          width: "100%",
+          minHeight: 0,
           cursor: dragging ? "grabbing" : "grab",
           background: "var(--bg-primary, #1e1e2e)",
         }}
