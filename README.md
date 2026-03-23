@@ -76,17 +76,66 @@ Tested on XiaoHongShu's `libxyass.so` shield algorithm (139K lines, heavily obfu
 - Algorithm structure (HMAC-MD5 → RC4 → Base64) identified in ~10 CLI calls
 - 约 10 次 CLI 调用即识别出完整算法结构（HMAC-MD5 → RC4 → Base64）
 
-## unidbg Integration / unidbg 集成
+## unidbg Setup / unidbg 配置
 
-This tool requires enhanced trace output from unidbg. The modifications to `AssemblyCodeDumper.java` and `RegAccessPrinter.java` add:
+**⚠️ Required / 必须步骤** — trace-cli requires enhanced unidbg trace output. Standard `traceCode()` output is missing memory addresses, which means `taint`, `memdump`, and `xref` won't work properly.
 
-本工具需要增强版的 unidbg trace 输出。对 `AssemblyCodeDumper.java` 和 `RegAccessPrinter.java` 的修改：
+**⚠️ 必须** — trace-cli 依赖增强版的 unidbg trace 输出。标准 `traceCode()` 缺少内存地址信息，`taint`、`memdump`、`xref` 将无法正常工作。
 
-- `; mem[READ/WRITE] abs=0x...` — absolute memory addresses for all load/store
-- `; mem[READ/WRITE] abs=0x...` — 所有 load/store 指令的内存绝对地址
-- `data[0xADDR]=0xHEX` — delayed memory reads for SIMD stores (workaround for `reg_read_vector` bug)
-- `data[0xADDR]=0xHEX` — SIMD store 的延迟内存读取（绕过 `reg_read_vector` 在 CodeHook 中返回旧值的 bug）
-- Q/D/S SIMD register value output
+### Step 1: Replace unidbg files / 替换 unidbg 文件
+
+Copy the two patched files from `unidbg-patch/` to your unidbg source tree:
+
+将 `unidbg-patch/` 下的两个文件复制到你的 unidbg 源码中：
+
+```bash
+cp unidbg-patch/AssemblyCodeDumper.java  <your-unidbg>/unidbg-api/src/main/java/com/github/unidbg/AssemblyCodeDumper.java
+cp unidbg-patch/RegAccessPrinter.java    <your-unidbg>/unidbg-api/src/main/java/com/github/unidbg/RegAccessPrinter.java
+```
+
+Then rebuild unidbg / 然后重新编译 unidbg：
+
+```bash
+cd <your-unidbg>
+mvn install -DskipTests -Dgpg.skip=true
+```
+
+### Step 2: Generate trace / 生成 trace
+
+In your Java test code, use `traceCode()` as usual. The patched files automatically add memory annotations.
+
+在你的 Java 测试代码中，正常使用 `traceCode()`。修改后的文件会自动添加内存注解。
+
+```java
+// Enable trace / 开启 trace
+TraceHook hook = emulator.traceCode(module.base, module.base + module.size);
+hook.setRedirect(new PrintStream(new File("trace.log")));
+
+// Run your target function / 运行目标函数
+// ...
+
+// Stop trace / 停止 trace
+hook.stopTrace();
+```
+
+### What the patch adds / 补丁添加了什么
+
+Standard unidbg output / 标准 unidbg 输出：
+```
+"ldr x8, [x26, #0x50]" x26=0x123db000 => x8=0x60957206
+```
+
+Patched output / 修改后输出：
+```
+"ldr x8, [x26, #0x50]" ; mem[READ] abs=0x123db050 x26=0x123db000 => x8=0x60957206
+"str q0, [x27]" ; mem[WRITE] abs=0x123d6070 q0=0x00...00 x27=0x123d6070 data[0x123d6070]=0x6bc31d303a945570fb1343cbc6dc449f
+```
+
+- `; mem[READ/WRITE] abs=0x...` — absolute memory address for every load/store
+- `; mem[READ/WRITE] abs=0x...` — 每条 load/store 的内存绝对地址
+- `data[0xADDR]=0xHEX` — actual memory content for SIMD stores (delayed read)
+- `data[0xADDR]=0xHEX` — SIMD store 的真实内存内容（延迟读取）
+- Q/D/S register values in trace output
 - Q/D/S SIMD 寄存器值输出
 
 ## Build / 构建
