@@ -59,6 +59,23 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2" --locked
 
+      - name: Build trace-cli binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename trace-cli binary (Unix)
+        if: matrix.platform != 'windows-latest'
+        run: cp target/${{ matrix.target }}/release/trace-cli trace-cli-${{ matrix.target }}
+
+      - name: Rename trace-cli binary (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: cp target/${{ matrix.target }}/release/trace-cli.exe trace-cli-${{ matrix.target }}.exe
+
+      - name: Upload trace-cli binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-cli-${{ matrix.label }}
+          path: trace-cli-${{ matrix.target }}*
+
       - name: Build Tauri app
         run: cargo tauri build --target ${{ matrix.target }} --ci
         env:
