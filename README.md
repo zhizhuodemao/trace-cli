@@ -138,12 +138,31 @@ Patched output / 修改后输出：
 - Q/D/S register values in trace output
 - Q/D/S SIMD 寄存器值输出
 
-## Build / 构建
+## Install / 安装
+
+### One-liner (recommended) / 一键安装（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhizhuodemao/trace-ui-for-ai/main/install.sh | bash
+```
+
+Downloads a pre-built binary + example trace. No Rust needed.
+
+自动下载预编译二进制 + 示例 trace，无需 Rust 环境。
+
+### Try it immediately / 立即体验
+
+```bash
+trace-cli example.trace info
+trace-cli example.trace search "0x67452301"
+trace-cli example.trace taint x0@last --data-only
+```
+
+### Build from source / 从源码构建
 
 ```bash
 # Requires Rust 1.75+
 cargo build --release
-
 # Binary at / 二进制文件位于 target/release/trace-cli
 ```
 
