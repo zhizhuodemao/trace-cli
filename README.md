@@ -4,7 +4,7 @@ AI-first ARM64 trace analysis tool. Designed for AI agents (Claude Code) to effi
 
 AI 优先的 ARM64 trace 分析工具。专为 AI Agent（Claude Code）设计，高效分析 unidbg 执行轨迹。
 
-> Fork of [trace-ui](https://github.com/anthropics/trace-ui), rebuilt from scratch with an AI-product mindset: the tool hides all complexity (indexing, caching, parsing) and exposes only the capabilities AI needs.
+> Fork of [trace-ui](https://github.com/imj01y/trace-ui), rebuilt from scratch with an AI-product mindset: the tool hides all complexity (indexing, caching, parsing) and exposes only the capabilities AI needs.
 >
 > 基于 [trace-ui](https://github.com/anthropics/trace-ui) fork，以 AI 产品思维从零重构：工具隐藏所有复杂度（索引、缓存、解析），只暴露 AI 需要的能力。
 
