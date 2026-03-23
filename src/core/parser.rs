@@ -70,6 +70,31 @@ fn find_mem_op_raw(line: &[u8], from: usize) -> Option<(bool, u64)> {
     Some((is_write, addr))
 }
 
+/// Search for `data[0xADDR]=0xHEX` field at the end of a trace line.
+/// Returns the raw hex bytes (not the address) if found.
+/// This field contains the actual memory content after a SIMD store executed,
+/// overriding the stale q register values shown earlier on the line.
+fn find_data_field_hex(line: &[u8], from: usize) -> Option<&[u8]> {
+    // Search for "data[0x" marker
+    let search = &line[from..];
+    let marker_rel = memmem::find(search, b"data[0x")?;
+    let marker_abs = from + marker_rel;
+    // Find "]=0x" after the address
+    let after_marker = &line[marker_abs..];
+    let eq_rel = memmem::find(after_marker, b"]=0x")?;
+    let val_start = marker_abs + eq_rel + 4; // skip "]=0x"
+    let val_end = line[val_start..]
+        .iter()
+        .position(|b| !b.is_ascii_hexdigit())
+        .map(|p| val_start + p)
+        .unwrap_or(line.len());
+    if val_start < val_end {
+        Some(&line[val_start..val_end])
+    } else {
+        None
+    }
+}
+
 /// Parse a trace line (lightweight mode for scan — skips arrow register extraction).
 ///
 /// Returns `None` for lines that don't match the expected trace format
@@ -204,7 +229,7 @@ fn parse_line_inner(raw: &str, extract_regs: bool) -> Option<ParsedLine> {
         } else {
             (None, None, None)
         };
-        MemOp {
+        let mut mem = MemOp {
             is_write,
             abs,
             elem_width,
@@ -214,7 +239,53 @@ fn parse_line_inner(raw: &str, extract_regs: bool) -> Option<ParsedLine> {
             value_hi,
             value2_lo,
             value2_hi,
+        };
+
+        // 5c. Override with data[0xADDR]=0xHEX if present (WRITE only).
+        // This field contains the actual memory content after the store,
+        // which is the ground truth — register values may be stale.
+        if is_write {
+            if let Some(hex_bytes) = find_data_field_hex(bytes, q2) {
+                let hex_len = hex_bytes.len();
+                // Each hex char = 4 bits, so hex_len/2 = byte count
+                let byte_count = hex_len / 2;
+                if byte_count <= 16 {
+                    // Single register (up to 128 bits)
+                    if let Some(val) = parse_hex_u128(hex_bytes) {
+                        if byte_count <= 8 {
+                            // Fits in u64
+                            mem.value = Some(val as u64);
+                            mem.value_lo = None;
+                            mem.value_hi = None;
+                        } else {
+                            // 128-bit: split into lo/hi
+                            mem.value = None;
+                            mem.value_lo = Some(val as u64);
+                            mem.value_hi = Some((val >> 64) as u64);
+                        }
+                    }
+                } else if byte_count <= 32 {
+                    // Pair store (e.g., stp q0, q1): first 16 bytes → reg1, next 16 bytes → reg2
+                    // hex_bytes layout: first 32 hex chars = first 16 bytes (reg1),
+                    // next 32 hex chars = next 16 bytes (reg2)
+                    let mid = 32.min(hex_len); // 16 bytes = 32 hex chars
+                    if let Some(val1) = parse_hex_u128(&hex_bytes[..mid]) {
+                        mem.value = None;
+                        mem.value_lo = Some(val1 as u64);
+                        mem.value_hi = Some((val1 >> 64) as u64);
+                    }
+                    if mid < hex_len {
+                        if let Some(val2) = parse_hex_u128(&hex_bytes[mid..]) {
+                            mem.value2 = None;
+                            mem.value2_lo = Some(val2 as u64);
+                            mem.value2_hi = Some((val2 >> 64) as u64);
+                        }
+                    }
+                }
+            }
         }
+
+        mem
     });
 
     // 6. Detect writeback (searches only operand_text — no full-line scan)
@@ -1091,5 +1162,87 @@ mod tests {
     fn test_find_reg_value_not_found() {
         let line = b"x8=0xf";
         assert_eq!(find_reg_value(line, b"x9", 0), None);
+    }
+
+    // =========================================================================
+    // data[0xADDR]=0xHEX override tests
+    // =========================================================================
+
+    #[test]
+    fn test_data_field_16byte_override() {
+        // str q0 with stale q0 value, data[] field contains the truth
+        let raw = r#"[14:37:01 725][libxyass.so 0x9aab8] [606baa3c] 0x1209aab8: "str q0, [x27, x10]" ; mem[WRITE] abs=0x123d6070 q0=0x00000000000000000000000000000000 x27=0x123d6070 x10=0x0 data[0x123d6070]=0x6bc31d303a945570fb1343cbc6dc449f"#;
+        let line = parse_line(raw).expect("should parse");
+        let mem = line.mem_op.as_ref().expect("should have mem_op");
+        assert!(mem.is_write);
+        assert_eq!(mem.abs, 0x123d6070);
+        assert_eq!(mem.elem_width, 16);
+        // data[] value: 0x6bc31d303a945570fb1343cbc6dc449f
+        // value_lo = low 64 bits = 0xfb1343cbc6dc449f
+        // value_hi = high 64 bits = 0x6bc31d303a945570
+        assert_eq!(mem.value, None);
+        assert_eq!(mem.value_lo, Some(0xfb1343cbc6dc449f));
+        assert_eq!(mem.value_hi, Some(0x6bc31d303a945570));
+    }
+
+    #[test]
+    fn test_data_field_overrides_stale_register() {
+        // Verify the stale q0=0x000...000 is overridden by data[] field
+        let raw = r#"[00:00:00 001][lib.so 0x100] [3d800000] 0x40000100: "str q0, [x0]" ; mem[WRITE] abs=0x50000000 q0=0x00000000000000000000000000000000 x0=0x50000000 data[0x50000000]=0xaabbccdd11223344aabbccdd11223344"#;
+        let line = parse_line(raw).expect("should parse");
+        let mem = line.mem_op.as_ref().expect("should have mem_op");
+        assert_eq!(mem.value_lo, Some(0xaabbccdd11223344));
+        assert_eq!(mem.value_hi, Some(0xaabbccdd11223344));
+    }
+
+    #[test]
+    fn test_data_field_32byte_stp_pair() {
+        // stp q0, q1 writes 32 bytes: first 16 → q0, next 16 → q1
+        let raw = r#"[00:00:00 001][lib.so 0x100] [ad000000] 0x40000100: "stp q0, q1, [x0]" ; mem[WRITE] abs=0x50000000 q0=0x0 q1=0x0 x0=0x50000000 data[0x50000000]=0xAAAABBBBCCCCDDDD1111222233334444EEEEFFFFAAAABBBB5555666677778888"#;
+        let line = parse_line(raw).expect("should parse");
+        let mem = line.mem_op.as_ref().expect("should have mem_op");
+        assert!(mem.is_write);
+        // First 16 bytes (32 hex chars): AAAABBBBCCCCDDDD1111222233334444
+        assert_eq!(mem.value_lo, Some(0x1111222233334444));
+        assert_eq!(mem.value_hi, Some(0xAAAABBBBCCCCDDDD));
+        // Next 16 bytes (32 hex chars): EEEEFFFFAAAABBBB5555666677778888
+        assert_eq!(mem.value2_lo, Some(0x5555666677778888));
+        assert_eq!(mem.value2_hi, Some(0xEEEEFFFFAAAABBBB));
+    }
+
+    #[test]
+    fn test_data_field_not_present_on_read() {
+        // READ operations never have data[] field, values come from registers
+        let raw = r#"[00:00:00 001][lib.so 0x100] [3dc00000] 0x40000100: "ldr q0, [x0]" ; mem[READ] abs=0x50000000 x0=0x50000000 => q0=0x00000000000000030000000000000004"#;
+        let line = parse_line(raw).expect("should parse");
+        let mem = line.mem_op.as_ref().expect("should have mem_op");
+        assert!(!mem.is_write);
+        assert_eq!(mem.value_lo, Some(0x0000000000000004));
+        assert_eq!(mem.value_hi, Some(0x0000000000000003));
+    }
+
+    #[test]
+    fn test_data_field_8byte_store() {
+        // str x8 with data[] field (8 bytes = 16 hex chars)
+        let raw = r#"[00:00:00 001][lib.so 0x100] [f9000000] 0x40000100: "str x8, [x0]" ; mem[WRITE] abs=0x50000000 x8=0xdead x0=0x50000000 data[0x50000000]=0x00000000000000ff"#;
+        let line = parse_line(raw).expect("should parse");
+        let mem = line.mem_op.as_ref().expect("should have mem_op");
+        assert!(mem.is_write);
+        assert_eq!(mem.value, Some(0x00000000000000ff));
+        assert!(mem.value_lo.is_none());
+        assert!(mem.value_hi.is_none());
+    }
+
+    #[test]
+    fn test_find_data_field_hex_basic() {
+        let line = b"some stuff data[0x123d6070]=0xaabbccdd rest";
+        let hex = find_data_field_hex(line, 0).expect("should find");
+        assert_eq!(hex, b"aabbccdd");
+    }
+
+    #[test]
+    fn test_find_data_field_hex_not_present() {
+        let line = b"some stuff without data field";
+        assert!(find_data_field_hex(line, 0).is_none());
     }
 }
