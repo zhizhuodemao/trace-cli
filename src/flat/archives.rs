@@ -1,6 +1,6 @@
-use crate::taint::call_tree::CallTree;
-use crate::taint::scanner::RegLastDef;
-use crate::taint::types::RegId;
+use crate::core::call_tree::CallTree;
+use crate::core::scanner::RegLastDef;
+use crate::core::types::RegId;
 use std::sync::Arc;
 use memmap2::Mmap;
 

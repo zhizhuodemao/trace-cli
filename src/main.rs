@@ -1,73 +1,60 @@
-#![windows_subsystem = "windows"]
+pub mod core;
+pub mod flat;
+pub mod index;
+pub mod session;
+pub mod output;
+pub mod func_stats;
 
-mod cache;
-mod commands;
-mod flat;
-mod taint;
-mod line_index;
-mod phase2;
-mod state;
+use clap::{Parser, Subcommand};
+use anyhow::Result;
 
-use state::AppState;
-use tauri::Manager;
+#[derive(Parser)]
+#[command(name = "trace-cli", about = "AI-first ARM64 trace analysis")]
+struct Cli {
+    /// Path to trace file
+    file: String,
 
-#[tauri::command]
-fn toggle_devtools(window: tauri::WebviewWindow) {
-    if window.is_devtools_open() {
-        window.close_devtools();
-    } else {
-        window.open_devtools();
-    }
+    #[command(subcommand)]
+    command: Commands,
 }
 
-fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .manage(AppState::new())
-        .setup(|app| {
-            let _window = app.get_webview_window("main").unwrap();
+#[derive(Subcommand)]
+enum Commands {
+    /// Show trace structure (function call tree)
+    Overview,
+    /// Show trace lines in a range
+    Lines {
+        /// Line range, e.g. "100-200"
+        range: String,
+    },
+    /// Backward taint analysis
+    Taint {
+        /// Target spec, e.g. "x0@last" or "x0@5000"
+        spec: String,
+    },
+}
 
-            // Windows 不支持 titleBarStyle: "Overlay"，需要手动关闭原生装饰
-            #[cfg(target_os = "windows")]
-            let _ = _window.set_decorations(false);
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+    let session = session::Session::open(&cli.file)?;
 
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            toggle_devtools,
-            commands::file::create_session,
-            commands::file::close_session,
-            commands::file::delete_file_cache,
-            commands::browse::get_lines,
-            commands::index::build_index,
-            commands::registers::get_registers_at,
-            commands::call_tree::get_call_tree,
-            commands::call_tree::get_call_tree_node_count,
-            commands::call_tree::get_call_tree_children,
-            commands::search::search_trace,
-            commands::memory::get_memory_at,
-            commands::memory::get_mem_history,
-            commands::def_use::get_reg_def_use_chain,
-            commands::slice::run_slice,
-            commands::slice::get_slice_status,
-            commands::slice::clear_slice,
-            commands::slice::get_tainted_seqs,
-            commands::slice::export_taint_results,
-            commands::cache::get_cache_dir,
-            commands::cache::set_cache_dir,
-            commands::cache::clear_all_cache,
-            commands::strings::get_strings,
-            commands::strings::get_string_xrefs,
-            commands::strings::scan_strings,
-            commands::strings::cancel_scan_strings,
-            commands::browse::get_consumed_seqs,
-            commands::functions::get_function_calls,
-            commands::dep_tree::build_dependency_tree,
-            commands::dep_tree::build_dependency_tree_from_slice,
-            commands::dep_tree::get_line_def_registers,
-            commands::crypto::scan_crypto,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    match cli.command {
+        Commands::Overview => {
+            output::print_overview(&session);
+        }
+        Commands::Lines { range } => {
+            let parts: Vec<&str> = range.splitn(2, '-').collect();
+            if parts.len() != 2 {
+                anyhow::bail!("invalid range '{}': expected format 'START-END' (e.g. 0-20)", range);
+            }
+            let start: u32 = parts[0].parse()?;
+            let end: u32 = parts[1].parse()?;
+            output::print_lines(&session, start, end);
+        }
+        Commands::Taint { spec } => {
+            output::print_taint(&session, &spec)?;
+        }
+    }
+
+    Ok(())
 }

@@ -83,7 +83,7 @@ impl<'a> LineIndexView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::line_index::LineIndex;
+    use crate::index::line_index::LineIndex;
 
     /// Build a LineIndexArchive from an existing LineIndex (for testing cross-compatibility).
     fn from_line_index(idx: &LineIndex) -> LineIndexArchive {

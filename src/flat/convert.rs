@@ -1,9 +1,9 @@
 use rustc_hash::FxHashMap;
 
-use crate::taint::mem_access::{MemAccessIndex, MemRw};
-use crate::taint::reg_checkpoint::RegCheckpoints;
-use crate::taint::scanner::{DepsStorage, MemLastDef, PairSplitDeps};
-use crate::line_index::LineIndex;
+use crate::core::mem_access::{MemAccessIndex, MemRw};
+use crate::core::reg_checkpoint::RegCheckpoints;
+use crate::core::scanner::{DepsStorage, MemLastDef, PairSplitDeps};
+use crate::index::line_index::LineIndex;
 
 use super::mem_access::{FlatMemAccess, FlatMemAccessRecord, MEM_RW_READ, MEM_RW_WRITE};
 use super::reg_checkpoints::{FlatRegCheckpoints, REG_COUNT};
@@ -16,8 +16,8 @@ use super::line_index::LineIndexArchive;
 /// Convert a `MemAccessIndex` (HashMap-backed) to `FlatMemAccess` (sorted CSR format).
 pub fn mem_access_to_flat(idx: &MemAccessIndex) -> FlatMemAccess {
     // Collect all (addr, record) pairs from iter_all, group by addr
-    let mut grouped: Vec<(u64, Vec<&crate::taint::mem_access::MemAccessRecord>)> = {
-        let mut map: std::collections::BTreeMap<u64, Vec<&crate::taint::mem_access::MemAccessRecord>> =
+    let mut grouped: Vec<(u64, Vec<&crate::core::mem_access::MemAccessRecord>)> = {
+        let mut map: std::collections::BTreeMap<u64, Vec<&crate::core::mem_access::MemAccessRecord>> =
             std::collections::BTreeMap::new();
         for (addr, rec) in idx.iter_all() {
             map.entry(addr).or_default().push(rec);
@@ -227,9 +227,9 @@ pub fn line_index_to_archive(li: &LineIndex) -> LineIndexArchive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::taint::mem_access::{MemAccessIndex, MemAccessRecord, MemRw};
-    use crate::taint::reg_checkpoint::RegCheckpoints;
-    use crate::taint::scanner::{CompactDeps, DepsStorage, MemLastDef, PairSplitDeps};
+    use crate::core::mem_access::{MemAccessIndex, MemAccessRecord, MemRw};
+    use crate::core::reg_checkpoint::RegCheckpoints;
+    use crate::core::scanner::{CompactDeps, DepsStorage, MemLastDef, PairSplitDeps};
     use bitvec::prelude::BitVec;
 
     // ── mem_access ──────────────────────────────────────────────────────────
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_reg_checkpoints_round_trip() {
-        use crate::taint::types::RegId;
+        use crate::core::types::RegId;
         let mut ckpts = RegCheckpoints::new(100);
 
         let mut vals0 = [0u64; RegId::COUNT];

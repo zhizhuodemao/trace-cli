@@ -1,12 +1,15 @@
 [package]
-name = "trace-ui"
-version = "0.5.5"
+name = "trace-cli"
+version = "0.1.0"
 edition = "2021"
-description = "Desktop trace viewer for ARM64 execution traces"
-license = "LicenseRef-Personal-Use"
+description = "AI-first ARM64 trace analysis tool"
+
+[[bin]]
+name = "trace-cli"
+path = "src/main.rs"
 
 [dependencies]
-tauri = { version = "2", features = ["devtools", "macos-private-api"] }
+clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = { version = "1", features = ["union", "serde"] }
@@ -15,17 +18,7 @@ rustc-hash = "2"
 anyhow = "1"
 memmap2 = "0.9"
 memchr = "2"
-tauri-plugin-dialog = "2"
 bincode = "1"
 sha2 = "0.10"
 dirs = "5"
-regex = "1"
-uuid = { version = "1.22.0", features = ["v4"] }
-tauri-plugin-opener = "2.5.3"
 rayon = "1"
-
-[features]
-custom-protocol = ["tauri/custom-protocol"]
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
